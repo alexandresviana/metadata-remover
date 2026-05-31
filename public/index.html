@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Metadata Remover — Limpe metadados de fotos</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="header">
+        <div class="logo" aria-hidden="true">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+            <rect x="4" y="6" width="24" height="20" rx="3" stroke="currentColor" stroke-width="2" />
+            <circle cx="12" cy="14" r="2.5" fill="currentColor" />
+            <path d="M8 22l6-6 4 4 6-8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </div>
+        <div>
+          <h1>Metadata Remover</h1>
+          <p class="tagline">Envie uma foto, veja os metadados e baixe a versão limpa.</p>
+        </div>
+      </header>
+
+      <main>
+        <section class="upload-card" id="dropZone">
+          <input type="file" id="fileInput" accept="image/*" hidden />
+          <div class="upload-inner" id="uploadPlaceholder">
+            <div class="upload-icon" aria-hidden="true">↑</div>
+            <p class="upload-title">Arraste uma imagem aqui</p>
+            <p class="upload-hint">ou <button type="button" class="link-btn" id="pickBtn">escolha um arquivo</button></p>
+            <p class="upload-formats">JPEG, PNG, WebP, GIF, TIFF, AVIF, HEIC — até 25 MB</p>
+          </div>
+          <div class="preview hidden" id="previewArea">
+            <img id="previewImg" alt="Pré-visualização" />
+            <div class="preview-meta">
+              <span id="fileName"></span>
+              <span id="fileSize"></span>
+            </div>
+            <button type="button" class="ghost-btn" id="changeFileBtn">Trocar imagem</button>
+          </div>
+        </section>
+
+        <div id="statusBar" class="status-bar hidden" role="status"></div>
+
+        <section class="panel hidden" id="infoPanel">
+          <h2>Informações do arquivo</h2>
+          <dl class="info-grid" id="infoGrid"></dl>
+        </section>
+
+        <section class="panel hidden" id="metadataPanel">
+          <div class="panel-head">
+            <h2>Metadados encontrados</h2>
+            <span class="badge" id="metaCount">0</span>
+          </div>
+          <p class="meta-summary hidden" id="metaSummary"></p>
+          <p class="empty-meta hidden" id="noMetadata">Nenhum metadado legível foi detectado nesta imagem.</p>
+          <label class="search-meta hidden" id="metaSearchWrap">
+            <span class="sr-only">Filtrar metadados</span>
+            <input type="search" id="metaSearch" placeholder="Filtrar por nome ou valor…" autocomplete="off" />
+          </label>
+          <div class="table-wrap hidden" id="tableWrap">
+            <table class="meta-table" id="metaTable">
+              <thead>
+                <tr>
+                  <th>Campo</th>
+                  <th>Valor</th>
+                </tr>
+              </thead>
+              <tbody id="metaBody"></tbody>
+            </table>
+          </div>
+          <p class="meta-footer hidden" id="metaFooter"></p>
+        </section>
+
+        <section class="actions hidden" id="actionsPanel">
+          <button type="button" class="primary-btn" id="stripBtn" disabled>
+            <span class="btn-label">Gerar imagem sem metadados</span>
+            <span class="spinner hidden" id="stripSpinner"></span>
+          </button>
+          <p class="action-note">
+            A nova imagem é reencodada sem EXIF, GPS, XMP, IPTC nem perfil ICC.
+          </p>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <p>Processamento local no servidor — nada é armazenado após o download.</p>
+      </footer>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>
