@@ -6,10 +6,10 @@ RUN npm install --omit=dev
 FROM node:20-alpine
 WORKDIR /app
 
-RUN apk add --no-cache vips
+RUN apk add --no-cache vips ffmpeg exiftool
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY package.json server.js auth.js ./
+COPY package.json server.js auth.js media.js video.js ./
 COPY public ./public
 
 ENV NODE_ENV=production

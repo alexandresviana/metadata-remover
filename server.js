@@ -4,7 +4,6 @@ const path = require("path");
 const exifr = require("exifr");
 const sharp = require("sharp");
 const {
-  CSRF_HEADER,
   createSession,
   setSessionCookie,
   clearSessionCookie,
@@ -13,30 +12,28 @@ const {
   verifyPassword,
   isAuthConfigured,
 } = require("./auth");
+const {
+  getMediaKind,
+  extensionFromFile,
+  MAX_IMAGE_BYTES,
+  MAX_VIDEO_BYTES,
+  validateUpload,
+} = require("./media");
+const { readVideoMetadata, stripVideo, formatDuration } = require("./video");
 
 const PORT = Number(process.env.PORT) || 3000;
-const MAX_FILE_SIZE = 25 * 1024 * 1024;
-
-const ALLOWED_MIME = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-  "image/tiff",
-  "image/avif",
-  "image/heic",
-  "image/heif",
-]);
+const MAX_UPLOAD_BYTES = Math.max(MAX_IMAGE_BYTES, MAX_VIDEO_BYTES);
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_FILE_SIZE },
+  limits: { fileSize: MAX_UPLOAD_BYTES },
   fileFilter: (_req, file, cb) => {
-    if (ALLOWED_MIME.has(file.mimetype)) {
-      cb(null, true);
+    const check = validateUpload({ mimetype: file.mimetype, size: 0 });
+    if (!check.ok) {
+      cb(new Error(check.error));
       return;
     }
-    cb(new Error("Formato não suportado. Use JPEG, PNG, WebP, GIF, TIFF, AVIF ou HEIC."));
+    cb(null, true);
   },
 });
 
@@ -167,8 +164,98 @@ const SECTION_LABELS = {
   icc: "Perfil ICC",
   jfif: "JFIF",
   ihdr: "PNG (IHDR)",
+  exiftool: "ExifTool",
+  container: "Container (ffprobe)",
   other: "Outros",
 };
+
+function sanitizeBaseName(originalname) {
+  return (
+    path
+      .basename(originalname, path.extname(originalname))
+      .replace(/[^\w.\-]+/g, "_") || "arquivo"
+  );
+}
+
+function buildAnalyzeResponse({ info, entries, sections, metadata, hasMetadata }) {
+  return {
+    info,
+    metadata,
+    entries,
+    sections,
+    sectionLabels: SECTION_LABELS,
+    totalCount: entries.length,
+    hasMetadata,
+  };
+}
+
+async function analyzeImage(file) {
+  const metadata = await readAllMetadata(file.buffer);
+  const sharpMeta = await sharp(file.buffer, { failOn: "none" }).metadata();
+
+  const info = {
+    kind: "image",
+    filename: file.originalname,
+    mimetype: file.mimetype,
+    size: file.size,
+    width: sharpMeta.width,
+    height: sharpMeta.height,
+    format: sharpMeta.format,
+    hasAlpha: sharpMeta.hasAlpha,
+    orientation: sharpMeta.orientation,
+    duration: null,
+    videoCodec: null,
+    audioCodec: null,
+  };
+
+  const entries = buildMetadataEntries(metadata);
+  const sections = {};
+  for (const entry of entries) {
+    const name = entry.section || "other";
+    sections[name] = (sections[name] || 0) + 1;
+  }
+
+  return buildAnalyzeResponse({
+    info,
+    entries,
+    sections,
+    metadata,
+    hasMetadata: entries.length > 0 || Boolean(sharpMeta.exif || sharpMeta.icc || sharpMeta.xmp),
+  });
+}
+
+async function analyzeVideoFile(file) {
+  const { entries, sections, metadata, probe } = await readVideoMetadata(
+    file.buffer,
+    file.mimetype,
+    file.originalname
+  );
+
+  const info = {
+    kind: "video",
+    filename: file.originalname,
+    mimetype: file.mimetype,
+    size: file.size,
+    width: probe.width,
+    height: probe.height,
+    format: probe.formatName,
+    hasAlpha: null,
+    orientation: null,
+    duration: formatDuration(probe.duration),
+    durationSeconds: probe.duration,
+    videoCodec: probe.videoCodec,
+    audioCodec: probe.audioCodec,
+    bitRate: probe.bitRate,
+  };
+
+  return buildAnalyzeResponse({
+    info,
+    entries,
+    sections,
+    metadata,
+    hasMetadata: entries.length > 0,
+  });
+}
 
 async function readAllMetadata(buffer) {
   const segments = {};
@@ -244,7 +331,7 @@ function outputFormat(mimetype) {
   }
 }
 
-async function stripMetadata(buffer, mimetype) {
+async function stripImageMetadata(buffer, mimetype) {
   const { format, options } = outputFormat(mimetype);
   let pipeline = sharp(buffer, { failOn: "none" }).rotate();
 
@@ -275,7 +362,15 @@ async function stripMetadata(buffer, mimetype) {
 }
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, auth: isAuthConfigured() });
+  res.json({
+    ok: true,
+    auth: isAuthConfigured(),
+    video: true,
+    limits: {
+      imageMb: Math.round(MAX_IMAGE_BYTES / (1024 * 1024)),
+      videoMb: Math.round(MAX_VIDEO_BYTES / (1024 * 1024)),
+    },
+  });
 });
 
 app.get("/api/session", (req, res) => {
@@ -319,75 +414,75 @@ app.post("/api/logout", requireAuth, (_req, res) => {
 const apiRouter = express.Router();
 apiRouter.use(requireAuth);
 
-apiRouter.post("/analyze", upload.single("image"), async (req, res) => {
+apiRouter.post("/analyze", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: "Nenhuma imagem enviada." });
+      return res.status(400).json({ error: "Nenhum arquivo enviado." });
     }
 
-    const metadata = await readAllMetadata(req.file.buffer);
-    const sharpMeta = await sharp(req.file.buffer, { failOn: "none" }).metadata();
-
-    const info = {
-      filename: req.file.originalname,
-      mimetype: req.file.mimetype,
-      size: req.file.size,
-      width: sharpMeta.width,
-      height: sharpMeta.height,
-      format: sharpMeta.format,
-      hasAlpha: sharpMeta.hasAlpha,
-      orientation: sharpMeta.orientation,
-    };
-
-    const entries = buildMetadataEntries(metadata);
-    const sections = {};
-    for (const entry of entries) {
-      const name = entry.section || "other";
-      sections[name] = (sections[name] || 0) + 1;
+    const sizeCheck = validateUpload(req.file);
+    if (!sizeCheck.ok) {
+      return res.status(400).json({ error: sizeCheck.error });
     }
 
-    res.json({
-      info,
-      metadata,
-      entries,
-      sections,
-      sectionLabels: SECTION_LABELS,
-      totalCount: entries.length,
-      hasMetadata: entries.length > 0 || Boolean(sharpMeta.exif || sharpMeta.icc || sharpMeta.xmp),
-    });
+    const kind = getMediaKind(req.file.mimetype);
+    const result =
+      kind === "video" ? await analyzeVideoFile(req.file) : await analyzeImage(req.file);
+
+    res.json(result);
   } catch (err) {
     console.error("analyze error:", err);
-    res.status(500).json({ error: err.message || "Erro ao analisar a imagem." });
+    res.status(500).json({ error: err.message || "Erro ao analisar o arquivo." });
   }
 });
 
-apiRouter.post("/strip", upload.single("image"), async (req, res) => {
+apiRouter.post("/strip", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: "Nenhuma imagem enviada." });
+      return res.status(400).json({ error: "Nenhum arquivo enviado." });
     }
 
-    const cleanBuffer = await stripMetadata(req.file.buffer, req.file.mimetype);
-    const { ext } = outputFormat(req.file.mimetype);
+    const sizeCheck = validateUpload(req.file);
+    if (!sizeCheck.ok) {
+      return res.status(400).json({ error: sizeCheck.error });
+    }
 
-    const baseName = path
-      .basename(req.file.originalname, path.extname(req.file.originalname))
-      .replace(/[^\w.\-]+/g, "_") || "imagem";
+    const kind = getMediaKind(req.file.mimetype);
+    const baseName = sanitizeBaseName(req.file.originalname);
+    const mode = String(req.body?.mode || "fast").toLowerCase();
 
-    const mime =
-      ext === "jpg"
-        ? "image/jpeg"
-        : ext === "png"
-          ? "image/png"
-          : ext === "webp"
-            ? "image/webp"
-            : `image/${ext}`;
+    let cleanBuffer;
+    let ext;
+    let mime;
+
+    if (kind === "video") {
+      const result = await stripVideo(
+        req.file.buffer,
+        req.file.mimetype,
+        req.file.originalname,
+        mode
+      );
+      cleanBuffer = result.buffer;
+      ext = result.ext;
+      mime = result.mime;
+    } else {
+      cleanBuffer = await stripImageMetadata(req.file.buffer, req.file.mimetype);
+      const format = outputFormat(req.file.mimetype);
+      ext = format.ext;
+      mime =
+        ext === "jpg"
+          ? "image/jpeg"
+          : ext === "png"
+            ? "image/png"
+            : ext === "webp"
+              ? "image/webp"
+              : `image/${ext}`;
+    }
+
+    const suffix = kind === "video" ? (mode === "max" ? "_sem_metadados_max" : "_sem_metadados") : "_sem_metadados";
 
     res.setHeader("Content-Type", mime);
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${baseName}_sem_metadados.${ext}"`
-    );
+    res.setHeader("Content-Disposition", `attachment; filename="${baseName}${suffix}.${ext}"`);
     res.send(cleanBuffer);
   } catch (err) {
     console.error("strip error:", err);
@@ -400,7 +495,11 @@ app.use("/api", apiRouter);
 app.use((err, _req, res, _next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === "LIMIT_FILE_SIZE") {
-      return res.status(400).json({ error: "Arquivo muito grande (máximo 25 MB)." });
+      const imageMb = Math.round(MAX_IMAGE_BYTES / (1024 * 1024));
+      const videoMb = Math.round(MAX_VIDEO_BYTES / (1024 * 1024));
+      return res
+        .status(400)
+        .json({ error: `Arquivo muito grande (máx. ${imageMb} MB imagem / ${videoMb} MB vídeo).` });
     }
     return res.status(400).json({ error: err.message });
   }

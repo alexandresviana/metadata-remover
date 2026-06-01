@@ -16,7 +16,9 @@ const changeFileBtn = document.getElementById("changeFileBtn");
 const uploadPlaceholder = document.getElementById("uploadPlaceholder");
 const previewArea = document.getElementById("previewArea");
 const previewImg = document.getElementById("previewImg");
+const previewVideo = document.getElementById("previewVideo");
 const fileNameEl = document.getElementById("fileName");
+const fileKindEl = document.getElementById("fileKind");
 const fileSizeEl = document.getElementById("fileSize");
 const statusBar = document.getElementById("statusBar");
 const infoPanel = document.getElementById("infoPanel");
@@ -32,9 +34,17 @@ const noMetadata = document.getElementById("noMetadata");
 const metaTable = document.getElementById("metaTable");
 const tableWrap = document.getElementById("tableWrap");
 const actionsPanel = document.getElementById("actionsPanel");
+const imageActions = document.getElementById("imageActions");
+const videoActions = document.getElementById("videoActions");
 const stripBtn = document.getElementById("stripBtn");
 const stripSpinner = document.getElementById("stripSpinner");
+const stripFastBtn = document.getElementById("stripFastBtn");
+const stripFastSpinner = document.getElementById("stripFastSpinner");
+const stripMaxBtn = document.getElementById("stripMaxBtn");
+const stripMaxSpinner = document.getElementById("stripMaxSpinner");
 const resultPanel = document.getElementById("resultPanel");
+const resultTitle = document.getElementById("resultTitle");
+const resultText = document.getElementById("resultText");
 const redownloadBtn = document.getElementById("redownloadBtn");
 const ghostChatLink = document.getElementById("ghostChatLink");
 const ghostChatShareBtn = document.getElementById("ghostChatShareBtn");
@@ -48,6 +58,8 @@ let csrfToken = null;
 let lastCleanBlob = null;
 let lastCleanFilename = "imagem_sem_metadados.jpg";
 let lastCleanMime = "image/jpeg";
+let currentMediaKind = null;
+let previewObjectUrl = null;
 
 function showLogin(message = "") {
   loginScreen.classList.remove("hidden");
@@ -150,11 +162,18 @@ function hideResultPanel() {
   lastCleanBlob = null;
 }
 
-function showResultPanel(blob, filename, mime) {
+function showResultPanel(blob, filename, mime, isVideo = false, mode = "fast") {
   lastCleanBlob = blob;
   lastCleanFilename = filename;
   lastCleanMime = mime;
   resultPanel.classList.remove("hidden");
+
+  resultTitle.textContent = isVideo ? "Vídeo pronto" : "Imagem pronta";
+  resultText.textContent = isVideo
+    ? mode === "max"
+      ? "Vídeo reencodado sem metadados (modo máximo)."
+      : "Metadados removidos do vídeo (modo rápido)."
+    : "Metadados removidos da imagem.";
 
   const canShare =
     typeof navigator !== "undefined" &&
@@ -166,8 +185,9 @@ function showResultPanel(blob, filename, mime) {
       const file = new File([blob], filename, { type: mime });
       if (!navigator.canShare || navigator.canShare({ files: [file] })) {
         ghostChatShareBtn.classList.remove("hidden");
-        ghostChatHint.textContent =
-          "Use “Compartilhar imagem” para enviar direto (celular) ou abra o Ghost Chat e anexe o arquivo baixado.";
+        ghostChatHint.textContent = isVideo
+          ? "Use “Compartilhar” no celular ou abra o Ghost Chat e anexe o vídeo baixado."
+          : "Use “Compartilhar imagem” no celular ou abra o Ghost Chat e anexe o arquivo baixado.";
         return;
       }
     } catch {
@@ -176,8 +196,8 @@ function showResultPanel(blob, filename, mime) {
   }
 
   ghostChatShareBtn.classList.add("hidden");
-  ghostChatHint.innerHTML =
-    `Abra o <a href="${GHOSTCHAT_URL}" target="_blank" rel="noopener noreferrer">ghosth.chat</a>, entre na sala e anexe a imagem que acabou de baixar.`;
+  const mediaWord = isVideo ? "vídeo" : "imagem";
+  ghostChatHint.innerHTML = `Abra o <a href="${GHOSTCHAT_URL}" target="_blank" rel="noopener noreferrer">ghosth.chat</a>, entre na sala e anexe o ${mediaWord} que acabou de baixar.`;
 }
 
 function downloadCleanImage() {
@@ -223,12 +243,59 @@ function setStatus(message, type = "loading") {
   statusBar.classList.remove("hidden");
 }
 
+function revokePreviewUrl() {
+  if (previewObjectUrl) {
+    URL.revokeObjectURL(previewObjectUrl);
+    previewObjectUrl = null;
+  }
+}
+
+function isVideoFile(file) {
+  return file.type.startsWith("video/");
+}
+
+function isImageFile(file) {
+  return file.type.startsWith("image/");
+}
+
+function setActionPanels(kind) {
+  currentMediaKind = kind;
+  if (kind === "video") {
+    imageActions.classList.add("hidden");
+    videoActions.classList.remove("hidden");
+  } else {
+    imageActions.classList.remove("hidden");
+    videoActions.classList.add("hidden");
+  }
+}
+
+function setStripButtonsDisabled(disabled) {
+  stripBtn.disabled = disabled;
+  stripFastBtn.disabled = disabled;
+  stripMaxBtn.disabled = disabled;
+}
+
 function showPreview(file) {
   uploadPlaceholder.classList.add("hidden");
   previewArea.classList.remove("hidden");
+  revokePreviewUrl();
+
   fileNameEl.textContent = file.name;
+  fileKindEl.textContent = isVideoFile(file) ? "Vídeo" : "Imagem";
   fileSizeEl.textContent = formatBytes(file.size);
-  previewImg.src = URL.createObjectURL(file);
+
+  previewObjectUrl = URL.createObjectURL(file);
+
+  if (isVideoFile(file)) {
+    previewImg.classList.add("hidden");
+    previewVideo.classList.remove("hidden");
+    previewVideo.src = previewObjectUrl;
+  } else {
+    previewVideo.classList.add("hidden");
+    previewVideo.removeAttribute("src");
+    previewImg.classList.remove("hidden");
+    previewImg.src = previewObjectUrl;
+  }
 }
 
 function resetPanels() {
@@ -236,7 +303,11 @@ function resetPanels() {
   infoPanel.classList.add("hidden");
   metadataPanel.classList.add("hidden");
   actionsPanel.classList.add("hidden");
-  stripBtn.disabled = true;
+  setStripButtonsDisabled(true);
+  imageActions.classList.remove("hidden");
+  videoActions.classList.add("hidden");
+  currentMediaKind = null;
+  revokePreviewUrl();
   metaBody.replaceChildren();
   infoGrid.innerHTML = "";
   metaSearch.value = "";
@@ -398,19 +469,20 @@ function renderMetadata(entries, sections, labels) {
 }
 
 async function handleFile(file) {
-  if (!file || !file.type.startsWith("image/")) {
-    setStatus("Selecione um arquivo de imagem válido.", "error");
+  if (!file || (!isImageFile(file) && !isVideoFile(file))) {
+    setStatus("Selecione uma imagem ou vídeo válido.", "error");
     return;
   }
 
   currentFile = file;
   resetPanels();
   showPreview(file);
+  setActionPanels(isVideoFile(file) ? "video" : "image");
   setStatus("Analisando metadados…", "loading");
-  stripBtn.disabled = true;
+  setStripButtonsDisabled(true);
 
   const formData = new FormData();
-  formData.append("image", file);
+  formData.append("file", file);
 
   try {
     const res = await apiFetch("/api/analyze", { method: "POST", body: formData });
@@ -426,28 +498,37 @@ async function handleFile(file) {
     infoPanel.classList.remove("hidden");
     metadataPanel.classList.remove("hidden");
     actionsPanel.classList.remove("hidden");
-    stripBtn.disabled = false;
+    setStripButtonsDisabled(false);
 
     const total = data.totalCount ?? data.entries.length;
+    const label = data.info.kind === "video" ? "Vídeo" : "Imagem";
     if (data.hasMetadata && total > 0) {
-      setStatus(`${total} campo(s) de metadados encontrados — todos listados na tabela abaixo.`, "success");
+      setStatus(`${label}: ${total} campo(s) de metadados encontrados.`, "success");
     } else {
-      setStatus("Imagem carregada. Nenhum metadado legível detectado — ainda assim você pode gerar uma cópia limpa.", "success");
+      setStatus(`${label} carregado. Nenhum metadado legível — ainda assim você pode gerar uma cópia limpa.`, "success");
     }
   } catch (err) {
-    setStatus(err.message || "Erro ao processar a imagem.", "error");
+    setStatus(err.message || "Erro ao processar o arquivo.", "error");
   }
 }
 
 function renderInfo(info) {
   const rows = [
+    ["Tipo de mídia", info.kind === "video" ? "Vídeo" : "Imagem"],
     ["Arquivo", info.filename],
-    ["Tipo", info.mimetype],
+    ["MIME", info.mimetype],
     ["Tamanho", formatBytes(info.size)],
     ["Dimensões", info.width && info.height ? `${info.width} × ${info.height}` : "—"],
     ["Formato", info.format || "—"],
-    ["Orientação EXIF", info.orientation != null ? String(info.orientation) : "—"],
   ];
+
+  if (info.kind === "video") {
+    rows.push(["Duração", info.duration || "—"]);
+    rows.push(["Codec de vídeo", info.videoCodec || "—"]);
+    rows.push(["Codec de áudio", info.audioCodec || "—"]);
+  } else {
+    rows.push(["Orientação EXIF", info.orientation != null ? String(info.orientation) : "—"]);
+  }
 
   infoGrid.innerHTML = rows
     .map(([label, value]) => `<dt>${label}</dt><dd>${escapeHtml(String(value))}</dd>`)
@@ -462,39 +543,71 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;");
 }
 
-async function stripMetadata() {
+function setActiveStripSpinner(mode, visible) {
+  const map = {
+    image: stripSpinner,
+    fast: stripFastSpinner,
+    max: stripMaxSpinner,
+  };
+  for (const spinner of Object.values(map)) {
+    spinner.classList.add("hidden");
+  }
+  if (visible && map[mode]) {
+    map[mode].classList.remove("hidden");
+  }
+}
+
+async function stripFile(mode = "fast") {
   if (!currentFile) return;
 
-  stripBtn.disabled = true;
-  stripSpinner.classList.remove("hidden");
-  setStatus("Gerando imagem sem metadados…", "loading");
+  const isVideo = currentMediaKind === "video";
+  setStripButtonsDisabled(true);
+  setActiveStripSpinner(isVideo ? mode : "image", true);
+
+  if (isVideo) {
+    setStatus(
+      mode === "max"
+        ? "Reencodando vídeo (modo máximo) — pode levar vários minutos…"
+        : "Limpando metadados do vídeo (modo rápido)…",
+      "loading"
+    );
+  } else {
+    setStatus("Gerando imagem sem metadados…", "loading");
+  }
 
   const formData = new FormData();
-  formData.append("image", currentFile);
+  formData.append("file", currentFile);
+  if (isVideo) {
+    formData.append("mode", mode);
+  }
 
   try {
     const res = await apiFetch("/api/strip", { method: "POST", body: formData });
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || "Falha ao gerar a imagem.");
+      throw new Error(err.error || "Falha ao gerar o arquivo.");
     }
 
     const blob = await res.blob();
     const disposition = res.headers.get("Content-Disposition") || "";
     const match = disposition.match(/filename="([^"]+)"/);
-    const downloadName = match ? match[1] : "imagem_sem_metadados.jpg";
-    const mime = blob.type || "image/jpeg";
+    const downloadName = match
+      ? match[1]
+      : isVideo
+        ? "video_sem_metadados.mp4"
+        : "imagem_sem_metadados.jpg";
+    const mime = blob.type || (isVideo ? "video/mp4" : "image/jpeg");
 
     downloadCleanImageFromBlob(blob, downloadName);
-    showResultPanel(blob, downloadName, mime);
+    showResultPanel(blob, downloadName, mime, isVideo, mode);
 
     setStatus("Download iniciado — envie no Ghost Chat quando quiser.", "success");
   } catch (err) {
     setStatus(err.message || "Erro ao remover metadados.", "error");
   } finally {
-    stripBtn.disabled = false;
-    stripSpinner.classList.add("hidden");
+    setStripButtonsDisabled(false);
+    setActiveStripSpinner(isVideo ? mode : "image", false);
   }
 }
 
@@ -530,7 +643,9 @@ fileInput.addEventListener("change", () => {
 
 metaSearch.addEventListener("input", () => applyMetadataFilter(metaSearch.value));
 
-stripBtn.addEventListener("click", stripMetadata);
+stripBtn.addEventListener("click", () => stripFile("fast"));
+stripFastBtn.addEventListener("click", () => stripFile("fast"));
+stripMaxBtn.addEventListener("click", () => stripFile("max"));
 
 dropZone.addEventListener("dragover", (e) => {
   e.preventDefault();

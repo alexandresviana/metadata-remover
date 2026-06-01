@@ -1,14 +1,22 @@
 # Metadata Remover
 
-Webapp para visualizar e remover metadados (EXIF, GPS, XMP, IPTC, ICC) de imagens.
+Webapp para visualizar e remover metadados de **imagens** e **vídeos**.
 
 ## Fluxo
 
 1. Entre com a senha configurada no servidor.
-2. Envie uma foto (arrastar ou selecionar).
+2. Envie uma foto ou vídeo (arrastar ou selecionar).
 3. O sistema lista os metadados encontrados.
-4. Clique em **Gerar imagem sem metadados** para baixar a versão limpa.
-5. Opcional: abra o [Ghost Chat](https://ghosth.chat) para enviar a imagem na sala.
+4. **Imagem:** botão **Gerar imagem sem metadados** (reencodifica com Sharp).
+5. **Vídeo:** escolha **Limpar (rápido)** — remux FFmpeg sem perda de qualidade — ou **Limpar (máximo)** — reencoda H.264/AAC para limpeza mais profunda.
+6. Opcional: abra o [Ghost Chat](https://ghosth.chat) para enviar o arquivo na sala.
+
+## Formatos e limites
+
+| Tipo | Formatos | Limite padrão |
+|------|----------|---------------|
+| Imagem | JPEG, PNG, WebP, GIF, TIFF, AVIF, HEIC | 25 MB (`MAX_IMAGE_MB`) |
+| Vídeo | MP4, MOV, MKV, WebM, AVI | 200 MB (`MAX_VIDEO_MB`) |
 
 ## Autenticação
 
@@ -77,8 +85,8 @@ docker push ghcr.io/SEU_USUARIO/metadata-remover:latest
 | `POST` | `/api/login` | — | `{ "password": "..." }` — define cookie + retorna `csrfToken` |
 | `GET` | `/api/session` | cookie | Estado da sessão |
 | `POST` | `/api/logout` | cookie + CSRF | Encerra sessão |
-| `POST` | `/api/analyze` | cookie + CSRF | Campo `image` (multipart) — metadados em JSON |
-| `POST` | `/api/strip` | cookie + CSRF | Campo `image` (multipart) — arquivo sem metadados |
+| `POST` | `/api/analyze` | cookie + CSRF | Campo `file` (multipart) — metadados em JSON |
+| `POST` | `/api/strip` | cookie + CSRF | Campo `file` + `mode` (`fast` ou `max`, só vídeo) |
 | `GET` | `/health` | — | Health check |
 
-Limite de upload: **25 MB**.
+Vídeos usam **FFmpeg** e **ExifTool** no container Docker.

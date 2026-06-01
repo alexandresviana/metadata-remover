@@ -216,12 +216,18 @@ body {
   gap: 0.75rem;
 }
 
-.preview img {
+.preview-media {
   max-width: 100%;
   max-height: 280px;
   border-radius: 8px;
   object-fit: contain;
   background: var(--bg);
+}
+
+.preview img.preview-media,
+.preview video.preview-media {
+  display: block;
+  margin: 0 auto;
 }
 
 .preview-meta {
@@ -506,6 +512,42 @@ body {
 .primary-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 400px;
+  margin-top: 0.5rem;
+  padding: 0.85rem 1.25rem;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.secondary-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.secondary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#videoActions .primary-btn,
+#videoActions .secondary-btn {
+  max-width: none;
+  width: 100%;
 }
 
 .spinner {
