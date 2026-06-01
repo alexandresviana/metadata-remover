@@ -3,6 +3,16 @@ const multer = require("multer");
 const path = require("path");
 const exifr = require("exifr");
 const sharp = require("sharp");
+const {
+  CSRF_HEADER,
+  createSession,
+  setSessionCookie,
+  clearSessionCookie,
+  getSession,
+  requireAuth,
+  verifyPassword,
+  isAuthConfigured,
+} = require("./auth");
 
 const PORT = Number(process.env.PORT) || 3000;
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
@@ -31,6 +41,34 @@ const upload = multer({
 });
 
 const app = express();
+app.use(express.json({ limit: "16kb" }));
+
+const loginAttempts = new Map();
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 10;
+
+function clientIp(req) {
+  return req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
+}
+
+function isLoginBlocked(ip) {
+  const entry = loginAttempts.get(ip);
+  if (!entry) return false;
+  if (Date.now() > entry.until) {
+    loginAttempts.delete(ip);
+    return false;
+  }
+  return entry.count >= LOGIN_MAX_ATTEMPTS;
+}
+
+function recordLoginFailure(ip) {
+  const now = Date.now();
+  const entry = loginAttempts.get(ip) || { count: 0, until: now + LOGIN_WINDOW_MS };
+  entry.count += 1;
+  entry.until = now + LOGIN_WINDOW_MS;
+  loginAttempts.set(ip, entry);
+}
+
 app.use(express.static(path.join(__dirname, "public")));
 
 function formatMetadataValue(value) {
@@ -237,10 +275,51 @@ async function stripMetadata(buffer, mimetype) {
 }
 
 app.get("/health", (_req, res) => {
+  res.json({ ok: true, auth: isAuthConfigured() });
+});
+
+app.get("/api/session", (req, res) => {
+  if (!isAuthConfigured()) {
+    return res.status(503).json({ error: "Servidor sem APP_PASSWORD configurado." });
+  }
+  const session = getSession(req);
+  if (!session) {
+    return res.status(401).json({ authenticated: false });
+  }
+  res.json({ authenticated: true, csrfToken: session.csrf });
+});
+
+app.post("/api/login", (req, res) => {
+  if (!isAuthConfigured()) {
+    return res.status(503).json({ error: "Servidor sem APP_PASSWORD configurado." });
+  }
+
+  const ip = clientIp(req);
+  if (isLoginBlocked(ip)) {
+    return res.status(429).json({ error: "Muitas tentativas. Aguarde alguns minutos." });
+  }
+
+  const password = String(req.body?.password || "");
+  if (!verifyPassword(password)) {
+    recordLoginFailure(ip);
+    return res.status(401).json({ error: "Senha incorreta." });
+  }
+
+  loginAttempts.delete(ip);
+  const { token, csrf } = createSession();
+  setSessionCookie(res, token);
+  res.json({ ok: true, csrfToken: csrf });
+});
+
+app.post("/api/logout", requireAuth, (_req, res) => {
+  clearSessionCookie(res);
   res.json({ ok: true });
 });
 
-app.post("/api/analyze", upload.single("image"), async (req, res) => {
+const apiRouter = express.Router();
+apiRouter.use(requireAuth);
+
+apiRouter.post("/analyze", upload.single("image"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "Nenhuma imagem enviada." });
@@ -282,7 +361,7 @@ app.post("/api/analyze", upload.single("image"), async (req, res) => {
   }
 });
 
-app.post("/api/strip", upload.single("image"), async (req, res) => {
+apiRouter.post("/strip", upload.single("image"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "Nenhuma imagem enviada." });
@@ -316,6 +395,8 @@ app.post("/api/strip", upload.single("image"), async (req, res) => {
   }
 });
 
+app.use("/api", apiRouter);
+
 app.use((err, _req, res, _next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === "LIMIT_FILE_SIZE") {
@@ -330,5 +411,8 @@ app.use((err, _req, res, _next) => {
 });
 
 app.listen(PORT, () => {
+  if (!isAuthConfigured()) {
+    console.warn("AVISO: defina APP_PASSWORD e SESSION_SECRET para ativar autenticação.");
+  }
   console.log(`Metadata Remover rodando em http://0.0.0.0:${PORT}`);
 });

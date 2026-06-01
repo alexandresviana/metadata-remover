@@ -4,13 +4,29 @@ Webapp para visualizar e remover metadados (EXIF, GPS, XMP, IPTC, ICC) de imagen
 
 ## Fluxo
 
-1. Envie uma foto (arrastar ou selecionar).
-2. O sistema lista os metadados encontrados.
-3. Clique em **Gerar imagem sem metadados** para baixar a versão limpa.
+1. Entre com a senha configurada no servidor.
+2. Envie uma foto (arrastar ou selecionar).
+3. O sistema lista os metadados encontrados.
+4. Clique em **Gerar imagem sem metadados** para baixar a versão limpa.
+5. Opcional: abra o [Ghost Chat](https://ghosth.chat) para enviar a imagem na sala.
+
+## Autenticação
+
+Defina no ambiente (Bunny, Docker ou `.env` local):
+
+| Variável | Obrigatório | Descrição |
+|----------|-------------|-----------|
+| `APP_PASSWORD` | Sim | Senha de acesso ao site |
+| `SESSION_SECRET` | Recomendado | Assinatura do cookie de sessão (se omitido, usa `APP_PASSWORD`) |
+
+A API (`/api/analyze`, `/api/strip`) exige cookie de sessão + header `X-CSRF-Token` retornado no login. Rotas públicas: `/health`, `/api/login`, `/api/session`.
 
 ## Desenvolvimento local
 
 ```bash
+cp .env.example .env
+# edite APP_PASSWORD e SESSION_SECRET
+export $(grep -v '^#' .env | xargs)
 npm install
 npm run dev
 ```
@@ -21,7 +37,10 @@ Abra [http://localhost:3000](http://localhost:3000).
 
 ```bash
 docker build -t metadata-remover .
-docker run -p 3000:3000 metadata-remover
+docker run -p 3000:3000 \
+  -e APP_PASSWORD=sua-senha \
+  -e SESSION_SECRET=segredo-longo \
+  metadata-remover
 ```
 
 ## Deploy na Bunny (Magic Containers)
@@ -41,7 +60,8 @@ Na Bunny:
 1. **Magic Containers** → criar app → imagem: `ghcr.io/<seu-usuario>/metadata-remover:latest`
 2. Se o pacote GHCR for privado, adicione credenciais de registry (PAT com `read:packages`).
 3. Porta do container: **3000** (ou variável `PORT`).
-4. Health check: `GET /health` na mesma porta.
+4. Variáveis de ambiente: `APP_PASSWORD`, `SESSION_SECRET`.
+5. Health check: `GET /health` na mesma porta.
 
 ### Build manual
 
@@ -52,10 +72,13 @@ docker push ghcr.io/SEU_USUARIO/metadata-remover:latest
 
 ## API
 
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| `POST` | `/api/analyze` | Campo `image` (multipart) — retorna metadados em JSON |
-| `POST` | `/api/strip` | Campo `image` (multipart) — retorna arquivo sem metadados |
-| `GET` | `/health` | Health check |
+| Método | Rota | Auth | Descrição |
+|--------|------|------|-----------|
+| `POST` | `/api/login` | — | `{ "password": "..." }` — define cookie + retorna `csrfToken` |
+| `GET` | `/api/session` | cookie | Estado da sessão |
+| `POST` | `/api/logout` | cookie + CSRF | Encerra sessão |
+| `POST` | `/api/analyze` | cookie + CSRF | Campo `image` (multipart) — metadados em JSON |
+| `POST` | `/api/strip` | cookie + CSRF | Campo `image` (multipart) — arquivo sem metadados |
+| `GET` | `/health` | — | Health check |
 
 Limite de upload: **25 MB**.

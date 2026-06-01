@@ -38,11 +38,86 @@ body {
   padding: 2rem 1.25rem 3rem;
 }
 
+.login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2rem 1.5rem;
+  text-align: center;
+}
+
+.login-logo {
+  margin: 0 auto 1rem;
+  display: inline-flex;
+}
+
+.login-card h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.35rem;
+}
+
+.login-hint {
+  margin: 0 0 1.25rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.login-label {
+  display: block;
+  text-align: left;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.login-label input {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+
+.login-label input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.login-error {
+  margin: 0 0 0.75rem;
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
 .header {
   display: flex;
   gap: 1rem;
   align-items: flex-start;
   margin-bottom: 2rem;
+}
+
+.header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.logout-btn {
+  flex-shrink: 0;
+  margin-top: 0.15rem;
 }
 
 .logo {
@@ -452,6 +527,72 @@ body {
   margin: 0.75rem 0 0;
   font-size: 0.8rem;
   color: var(--muted);
+}
+
+.result-panel h2 {
+  margin: 0 0 0.5rem;
+}
+
+.result-text {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.result-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.result-actions .primary-btn {
+  max-width: none;
+  width: 100%;
+}
+
+.ghostchat-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.85rem 1.25rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(62, 207, 142, 0.45);
+  background: rgba(62, 207, 142, 0.12);
+  color: var(--success);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.ghostchat-btn:hover {
+  background: rgba(62, 207, 142, 0.2);
+  border-color: var(--success);
+}
+
+.ghostchat-btn-share {
+  background: rgba(61, 158, 255, 0.12);
+  border-color: rgba(61, 158, 255, 0.45);
+  color: var(--accent);
+}
+
+.ghostchat-btn-share:hover {
+  background: rgba(61, 158, 255, 0.2);
+  border-color: var(--accent);
+}
+
+.result-hint {
+  margin: 0.85rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.result-hint a {
+  color: var(--accent);
 }
 
 .footer {

@@ -9,7 +9,7 @@ WORKDIR /app
 RUN apk add --no-cache vips
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY package.json server.js ./
+COPY package.json server.js auth.js ./
 COPY public ./public
 
 ENV NODE_ENV=production

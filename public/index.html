@@ -13,7 +13,27 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="page">
+    <div id="loginScreen" class="login-screen">
+      <form class="login-card" id="loginForm">
+        <div class="logo login-logo" aria-hidden="true">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+            <rect x="4" y="6" width="24" height="20" rx="3" stroke="currentColor" stroke-width="2" />
+            <circle cx="12" cy="14" r="2.5" fill="currentColor" />
+            <path d="M8 22l6-6 4 4 6-8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </div>
+        <h1>Metadata Remover</h1>
+        <p class="login-hint">Digite a senha para acessar.</p>
+        <label class="login-label">
+          Senha
+          <input type="password" id="loginPassword" autocomplete="current-password" required />
+        </label>
+        <p class="login-error hidden" id="loginError" role="alert"></p>
+        <button type="submit" class="primary-btn" id="loginBtn">Entrar</button>
+      </form>
+    </div>
+
+    <div class="page hidden" id="appPage">
       <header class="header">
         <div class="logo" aria-hidden="true">
           <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -22,10 +42,11 @@
             <path d="M8 22l6-6 4 4 6-8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </div>
-        <div>
+        <div class="header-text">
           <h1>Metadata Remover</h1>
           <p class="tagline">Envie uma foto, veja os metadados e baixe a versão limpa.</p>
         </div>
+        <button type="button" class="ghost-btn logout-btn" id="logoutBtn">Sair</button>
       </header>
 
       <main>
@@ -86,6 +107,29 @@
           </button>
           <p class="action-note">
             A nova imagem é reencodada sem EXIF, GPS, XMP, IPTC nem perfil ICC.
+          </p>
+        </section>
+
+        <section class="panel result-panel hidden" id="resultPanel">
+          <h2>Imagem pronta</h2>
+          <p class="result-text">Metadados removidos. Você já pode baixar de novo ou enviar no Ghost Chat.</p>
+          <div class="result-actions">
+            <button type="button" class="primary-btn" id="redownloadBtn">Baixar novamente</button>
+            <a
+              href="https://ghosth.chat"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="ghostchat-btn"
+              id="ghostChatLink"
+            >
+              Abrir Ghost Chat
+            </a>
+            <button type="button" class="ghostchat-btn ghostchat-btn-share hidden" id="ghostChatShareBtn">
+              Compartilhar imagem…
+            </button>
+          </div>
+          <p class="result-hint" id="ghostChatHint">
+            No <a href="https://ghosth.chat" target="_blank" rel="noopener noreferrer">ghosth.chat</a>, crie ou entre numa sala e anexe a imagem limpa pelo botão de foto.
           </p>
         </section>
       </main>

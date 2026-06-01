@@ -1,3 +1,14 @@
+const GHOSTCHAT_URL = "https://ghosth.chat";
+const CSRF_HEADER = "x-csrf-token";
+
+const loginScreen = document.getElementById("loginScreen");
+const loginForm = document.getElementById("loginForm");
+const loginPassword = document.getElementById("loginPassword");
+const loginError = document.getElementById("loginError");
+const loginBtn = document.getElementById("loginBtn");
+const appPage = document.getElementById("appPage");
+const logoutBtn = document.getElementById("logoutBtn");
+
 const dropZone = document.getElementById("dropZone");
 const fileInput = document.getElementById("fileInput");
 const pickBtn = document.getElementById("pickBtn");
@@ -23,11 +34,182 @@ const tableWrap = document.getElementById("tableWrap");
 const actionsPanel = document.getElementById("actionsPanel");
 const stripBtn = document.getElementById("stripBtn");
 const stripSpinner = document.getElementById("stripSpinner");
+const resultPanel = document.getElementById("resultPanel");
+const redownloadBtn = document.getElementById("redownloadBtn");
+const ghostChatLink = document.getElementById("ghostChatLink");
+const ghostChatShareBtn = document.getElementById("ghostChatShareBtn");
+const ghostChatHint = document.getElementById("ghostChatHint");
 
 const VALUE_COLLAPSE_LEN = 180;
 let currentFile = null;
 let allEntries = [];
 let sectionLabels = {};
+let csrfToken = null;
+let lastCleanBlob = null;
+let lastCleanFilename = "imagem_sem_metadados.jpg";
+let lastCleanMime = "image/jpeg";
+
+function showLogin(message = "") {
+  loginScreen.classList.remove("hidden");
+  appPage.classList.add("hidden");
+  csrfToken = null;
+  if (message) {
+    loginError.textContent = message;
+    loginError.classList.remove("hidden");
+  } else {
+    loginError.classList.add("hidden");
+  }
+}
+
+function showApp() {
+  loginScreen.classList.add("hidden");
+  appPage.classList.remove("hidden");
+  loginError.classList.add("hidden");
+  loginPassword.value = "";
+}
+
+async function apiFetch(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  if (csrfToken && options.method && options.method !== "GET") {
+    headers.set(CSRF_HEADER, csrfToken);
+  }
+
+  const res = await fetch(url, {
+    ...options,
+    headers,
+    credentials: "same-origin",
+  });
+
+  if (res.status === 401) {
+    showLogin("Sessão expirada. Entre novamente.");
+    throw new Error("Não autenticado.");
+  }
+
+  if (res.status === 403) {
+    showLogin("Sessão inválida. Entre novamente.");
+    throw new Error("CSRF inválido.");
+  }
+
+  return res;
+}
+
+async function checkSession() {
+  const res = await fetch("/api/session", { credentials: "same-origin" });
+  if (!res.ok) {
+    showLogin();
+    return false;
+  }
+  const data = await res.json();
+  if (!data.authenticated) {
+    showLogin();
+    return false;
+  }
+  csrfToken = data.csrfToken;
+  showApp();
+  return true;
+}
+
+async function login(password) {
+  loginBtn.disabled = true;
+  loginError.classList.add("hidden");
+
+  try {
+    const res = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ password }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      loginError.textContent = data.error || "Falha no login.";
+      loginError.classList.remove("hidden");
+      return;
+    }
+    csrfToken = data.csrfToken;
+    showApp();
+  } catch {
+    loginError.textContent = "Erro de conexão. Tente de novo.";
+    loginError.classList.remove("hidden");
+  } finally {
+    loginBtn.disabled = false;
+  }
+}
+
+async function logout() {
+  try {
+    await apiFetch("/api/logout", { method: "POST" });
+  } catch {
+    /* ignore */
+  }
+  showLogin();
+}
+
+function hideResultPanel() {
+  resultPanel.classList.add("hidden");
+  lastCleanBlob = null;
+}
+
+function showResultPanel(blob, filename, mime) {
+  lastCleanBlob = blob;
+  lastCleanFilename = filename;
+  lastCleanMime = mime;
+  resultPanel.classList.remove("hidden");
+
+  const canShare =
+    typeof navigator !== "undefined" &&
+    typeof navigator.share === "function" &&
+    typeof File !== "undefined";
+
+  if (canShare) {
+    try {
+      const file = new File([blob], filename, { type: mime });
+      if (!navigator.canShare || navigator.canShare({ files: [file] })) {
+        ghostChatShareBtn.classList.remove("hidden");
+        ghostChatHint.textContent =
+          "Use “Compartilhar imagem” para enviar direto (celular) ou abra o Ghost Chat e anexe o arquivo baixado.";
+        return;
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+
+  ghostChatShareBtn.classList.add("hidden");
+  ghostChatHint.innerHTML =
+    `Abra o <a href="${GHOSTCHAT_URL}" target="_blank" rel="noopener noreferrer">ghosth.chat</a>, entre na sala e anexe a imagem que acabou de baixar.`;
+}
+
+function downloadCleanImage() {
+  if (!lastCleanBlob) return;
+  const url = URL.createObjectURL(lastCleanBlob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = lastCleanFilename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function shareCleanImage() {
+  if (!lastCleanBlob) return;
+
+  const file = new File([lastCleanBlob], lastCleanFilename, { type: lastCleanMime });
+  try {
+    await navigator.share({
+      files: [file],
+      title: "Imagem sem metadados",
+      text: "Enviar no Ghost Chat",
+    });
+  } catch (err) {
+    if (err.name !== "AbortError") {
+      window.open(GHOSTCHAT_URL, "_blank", "noopener,noreferrer");
+    }
+  }
+}
+
+function openGhostChat() {
+  window.open(GHOSTCHAT_URL, "_blank", "noopener,noreferrer");
+}
 
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -50,6 +232,7 @@ function showPreview(file) {
 }
 
 function resetPanels() {
+  hideResultPanel();
   infoPanel.classList.add("hidden");
   metadataPanel.classList.add("hidden");
   actionsPanel.classList.add("hidden");
@@ -230,7 +413,7 @@ async function handleFile(file) {
   formData.append("image", file);
 
   try {
-    const res = await fetch("/api/analyze", { method: "POST", body: formData });
+    const res = await apiFetch("/api/analyze", { method: "POST", body: formData });
     const data = await res.json();
 
     if (!res.ok) {
@@ -290,7 +473,7 @@ async function stripMetadata() {
   formData.append("image", currentFile);
 
   try {
-    const res = await fetch("/api/strip", { method: "POST", body: formData });
+    const res = await apiFetch("/api/strip", { method: "POST", body: formData });
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -301,15 +484,12 @@ async function stripMetadata() {
     const disposition = res.headers.get("Content-Disposition") || "";
     const match = disposition.match(/filename="([^"]+)"/);
     const downloadName = match ? match[1] : "imagem_sem_metadados.jpg";
+    const mime = blob.type || "image/jpeg";
 
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = downloadName;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCleanImageFromBlob(blob, downloadName);
+    showResultPanel(blob, downloadName, mime);
 
-    setStatus("Download iniciado — imagem sem metadados pronta.", "success");
+    setStatus("Download iniciado — envie no Ghost Chat quando quiser.", "success");
   } catch (err) {
     setStatus(err.message || "Erro ao remover metadados.", "error");
   } finally {
@@ -317,6 +497,28 @@ async function stripMetadata() {
     stripSpinner.classList.add("hidden");
   }
 }
+
+function downloadCleanImageFromBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+loginForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  login(loginPassword.value);
+});
+
+logoutBtn.addEventListener("click", logout);
+redownloadBtn.addEventListener("click", downloadCleanImage);
+ghostChatLink.addEventListener("click", (e) => {
+  e.preventDefault();
+  openGhostChat();
+});
+ghostChatShareBtn.addEventListener("click", shareCleanImage);
 
 pickBtn.addEventListener("click", () => fileInput.click());
 changeFileBtn.addEventListener("click", () => fileInput.click());
@@ -345,3 +547,5 @@ dropZone.addEventListener("drop", (e) => {
   const file = e.dataTransfer.files?.[0];
   if (file) handleFile(file);
 });
+
+checkSession();
